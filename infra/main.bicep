@@ -53,7 +53,6 @@ param apiUserAssignedIdentityName string = ''
 param applicationInsightsName string = ''
 param appServicePlanName string = ''
 param logAnalyticsName string = ''
-param resourceGroupName string = ''
 param storageAccountName string = ''
 param vNetName string = ''
 @description('Id of the user identity to be used for testing and debugging. This is not required in production. Leave empty if not needed.')
@@ -65,18 +64,10 @@ var tags = { 'azd-env-name': environmentName }
 var functionAppName = !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesFunctions}api-${resourceToken}'
 var deploymentStorageContainerName = 'app-package-${take(functionAppName, 32)}-${take(toLower(uniqueString(functionAppName, resourceToken)), 7)}'
 
-// Organize resources in a resource group
-resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
-  location: location
-  tags: tags
-}
-
 // User assigned managed identity to be used by the function app to reach storage and other dependencies
 // Assign specific roles to this identity in the RBAC module
 module apiUserAssignedIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.4.1' = {
   name: 'apiUserAssignedIdentity'
-  scope: rg
   params: {
     location: location
     tags: tags
@@ -87,7 +78,6 @@ module apiUserAssignedIdentity 'br/public:avm/res/managed-identity/user-assigned
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.1' = {
   name: 'appserviceplan'
-  scope: rg
   params: {
     name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
     sku: {
@@ -102,7 +92,6 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.1.1' = {
 
 module api './app/api.bicep' = {
   name: 'api'
-  scope: rg
   params: {
     name: functionAppName
     location: location
@@ -127,7 +116,6 @@ module api './app/api.bicep' = {
 // Backing storage for Azure functions backend API
 module storage 'br/public:avm/res/storage/storage-account:0.8.3' = {
   name: 'storage'
-  scope: rg
   params: {
     name: !empty(storageAccountName) ? storageAccountName : '${abbrs.storageStorageAccounts}${resourceToken}'
     allowBlobPublicAccess: false
@@ -162,7 +150,6 @@ var storageEndpointConfig = {
 // Consolidated Role Assignments
 module rbac 'app/rbac.bicep' = {
   name: 'rbacAssignments'
-  scope: rg
   params: {
     storageAccountName: storage.outputs.name
     appInsightsName: monitoring.outputs.name
@@ -178,7 +165,6 @@ module rbac 'app/rbac.bicep' = {
 // Virtual Network & private endpoint to blob storage
 module serviceVirtualNetwork 'app/vnet.bicep' =  if (vnetEnabled) {
   name: 'serviceVirtualNetwork'
-  scope: rg
   params: {
     location: location
     tags: tags
@@ -188,7 +174,6 @@ module serviceVirtualNetwork 'app/vnet.bicep' =  if (vnetEnabled) {
 
 module storagePrivateEndpoint 'app/storage-PrivateEndpoint.bicep' = if (vnetEnabled) {
   name: 'servicePrivateEndpoint'
-  scope: rg
   params: {
     location: location
     tags: tags
@@ -204,7 +189,6 @@ module storagePrivateEndpoint 'app/storage-PrivateEndpoint.bicep' = if (vnetEnab
 // Monitor application with Azure Monitor - Log Analytics and Application Insights
 module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.11.1' = {
   name: '${uniqueString(deployment().name, location)}-loganalytics'
-  scope: rg
   params: {
     name: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     location: location
@@ -215,7 +199,6 @@ module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.11.1' = 
  
 module monitoring 'br/public:avm/res/insights/component:0.6.0' = {
   name: '${uniqueString(deployment().name, location)}-appinsights'
-  scope: rg
   params: {
     name: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
     location: location
